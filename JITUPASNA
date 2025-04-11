@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Hitung Kerusakan & Kerugian</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+    <script src="https://js.arcgis.com/4.29/"></script>
+    <style>
+      html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
+      #tools { position: absolute; top: 10px; left: 10px; z-index: 99; background: white; padding: 10px; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="tools">
+      <input type="file" id="fileInput" />
+      <button id="hitungBtn">Hitung Kerusakan & Kerugian</button>
+    </div>
+    <div id="viewDiv"></div>
+
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/layers/GraphicsLayer",
+        "esri/request",
+        "esri/geometry/geometryEngine",
+        "esri/Graphic",
+        "esri/layers/GeoJSONLayer",
+        "esri/layers/support/Field",
+        "esri/layers/FeatureLayer",
+        "esri/config"
+      ], function(Map, MapView, FeatureLayer, GraphicsLayer, esriRequest, geometryEngine, Graphic, GeoJSONLayer, Field, FeatureLayerSupport, esriConfig) {
+
+        const urlPenduduk = "https://raw.githubusercontent.com/example/penduduk.json";
+        const urlNJOP = "https://raw.githubusercontent.com/example/njop.json";
+
+        const map = new Map({
+          basemap: "osm"
+        });
+
+        const view = new MapView({
+          container: "viewDiv",
+          map: map,
+          center: [106.8272, -6.1751], // Jakarta
+          zoom: 11
+        });
+
+        let droneLayer;
+
+        // Load file shp.zip
+        document.getElementById("fileInput").addEventListener("change", function(event) {
+          const file = event.target.files[0];
+          if (file) {
+            const params = {
+              name: file.name,
+              targetSR: view.spatialReference,
+              maxRecordCount: 1000,
+              enforceInputFileSizeLimit: true,
+              enforceOutputJsonSizeLimit: true
+            };
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            esriRequest("https://utility.arcgis.com/sharing/kml", {
+              query: params,
+              body: formData,
+              responseType: "json"
+            }).then((response) => {
+              // Handle response
+              console.log(response);
+            });
+          }
+        });
+
+        // Tombol Hitung
+        document.getElementById("hitungBtn").addEventListener("click", async function () {
+          if (!droneLayer) {
+            alert("Silakan upload data drone terlebih dahulu.");
+            return;
+          }
+
+          const pendudukData = await fetch(urlPenduduk).then(res => res.json());
+          const njopData = await fetch(urlNJOP).then(res => res.json());
+
+          let totalKerugian = 0;
+          let totalKerusakan = 0;
+
+          const query = droneLayer.createQuery();
+          const results = await droneLayer.queryFeatures(query);
+
+          results.features.forEach((feature) => {
+            const kode = feature.attributes.kode_kelurahan;
+
+            const penduduk = pendudukData.find(p => p.kode_kelurahan === kode);
+            const njop = njopData.find(n => n.kode_kelurahan === kode);
+
+            if (penduduk && njop) {
+              // Rumus Kerugian
+              const biayaPengungsian = penduduk.jumlah_jiwa * penduduk.perkiraan_hari * 35000;
+              const kehilanganPenghasilan = penduduk.jumlah_pekerja * penduduk.penghasilan_perhari * penduduk.perkiraan_hari;
+              const kerugian = biayaPengungsian + kehilanganPenghasilan;
+
+              // Rumus Kerusakan
+              const kerusakan = njop.luas_bangunan * njop.jumlah_bangunan * njop.nilai_njop * njop.presentase_kerusakan;
+
+              totalKerugian += kerugian;
+              totalKerusakan += kerusakan;
+            }
+          });
+
+          alert(
+            `Total Kerugian Sosial: Rp${totalKerugian.toLocaleString("id-ID")}\n` +
+            `Total Kerusakan Bangunan: Rp${totalKerusakan.toLocaleString("id-ID")}`
+          );
+        });
+
+        // Load dummy drone layer untuk testing
+        droneLayer = new FeatureLayer({
+          url: "https://services.arcgis.com/example/arcgis/rest/services/drone_test_layer/FeatureServer/0"
+        });
+        map.add(droneLayer);
+
+      });
+    </script>
+  </body>
+</html>
